@@ -29,23 +29,25 @@ The project is equipped with a configuration interface that allows the user to c
 
 The configuration can be done via a serial console. Use a serial monitor tool and connect to the ESP8266's serial port with a baud rate of 115200.
 
-- To set the configuration, send a JSON payload in the following format:
+- To set the configuration, send a JSON payload in the following format (remove all newlines, terminate with newline):
 
     ```
     {
-        "wifi_ssid": "<Your_WiFi_SSID>",
-        "wifi_password": "<Your_WiFi_Password>",
-        "mqtt_server": "<MQTT_Broker_Address>",
-        "mqtt_user": "<MQTT_User>",
-        "mqtt_pass": "<MQTT_Password>",
-        "temp_topic": "<MQTT_Topic_for_Temperature>",
-        "hum_topic": "<MQTT_Topic_for_Humidity>",
-        "light_topic": "<MQTT_Topic_for_Light_Intensity>",
-        "postInterval": <Time_Interval_in_ms_for_Posting_Data>
+        "wifi_ssid": "",
+        "wifi_password": "",
+        "mqtt_server": "",
+        "mqtt_port": 1883,
+        "mqtt_user": "",
+        "mqtt_pass": "",
+        "mqtt_name": "name of the main topic",
+        "temp_topic": "",
+        "hum_topic": "",
+        "light_topic": "",
+        "postInterval": 10
     }
     ```
 
-- To reset the configuration, send the string `RESET`.
+- To reset the configuration, send the string `RESET` + \n.
 
 ### LittleFS
 
