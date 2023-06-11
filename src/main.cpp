@@ -141,8 +141,7 @@ void readConfiguration()
   config.hum_topic = doc["hum_topic"] | "";
   config.light_topic = doc["light_topic"] | "";
 
-  config.postInterval = doc["postInterval"] | 1 * 60 * 1000; // Default 1 minute
-
+  config.postInterval = doc["postInterval"] | 60000; // Default 1 minute
   configFile.close();
 
   // Check if any field is a "null" string.
@@ -305,7 +304,7 @@ void processSerialInput(String input)
     config.temp_topic = doc["temp_topic"].as<String>();
     config.hum_topic = doc["hum_topic"].as<String>();
     config.light_topic = doc["light_topic"].as<String>();
-    config.postInterval = doc["postInterval"].as<int>();
+    config.postInterval = doc["postInterval"].as<int>() * 1000;
 
     writeConfiguration();
   }
