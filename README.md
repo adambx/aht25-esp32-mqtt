@@ -1,12 +1,12 @@
 # ESP8266 MQTT Sensor Node
 
-This is an ESP8266-based project that reads data from a HTU21D temperature and humidity sensor and a light-dependent resistor (LDR) for light intensity. The sensor data is then sent to an MQTT broker. The data is published to specified MQTT topics. This project is built with [PlatformIO](https://platformio.org/), an open-source ecosystem for IoT development.
+This is an ESP8266-based project that reads data from a AHT25 temperature and humidity sensor and a light-dependent resistor (LDR) for light intensity. The sensor data is then sent to an MQTT broker. The data is published to specified MQTT topics. This project is built with [PlatformIO](https://platformio.org/), an open-source ecosystem for IoT development.
 
 The project is equipped with a configuration interface that allows the user to configure WiFi and MQTT broker details via a serial console. It uses LittleFS for storing the configuration in the flash memory of the ESP8266.
 
 ## Functionalities
 
-1. Read data from HTU21D and LDR sensors.
+1. Read data from AHT25 and LDR (Analog in) sensors.
 2. Connect to a WiFi network.
 3. Connect to an MQTT broker and publish sensor data to configured topics.
 4. LED indication for various statuses.
@@ -17,7 +17,11 @@ The project is equipped with a configuration interface that allows the user to c
 
 ### Hardware
 
-1. Assemble your ESP8266 with HTU21D sensor and LDR module, and ensure all connections are correct.
+1. Assemble your ESP8266 with AHT25 sensor and LDR module, and ensure all connections are correct. The AHT can be powered by GPIO pins right next to the SDA and SCL pins (D3+ D4-). 
+``` C++
+#define POWER_PIN_HIGH D4
+#define POWER_PIN_LOW D3
+```
 
 ### Software
 
