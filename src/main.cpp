@@ -1,7 +1,7 @@
 #include <Arduino.h>
 #include <ESP8266WiFi.h>
 #include <Wire.h>
-#include "SparkFunHTU21D.h"
+#include <AHT10.h>
 #include <PubSubClient.h>
 #include <LittleFS.h>
 #include <ArduinoJson.h> // Include the ArduinoJson library
@@ -12,6 +12,10 @@
 #define LEDG D6
 #define LEDB D7
 #define BLINK_INTERVAL 250 // define blink interval in ms
+
+// powering the sensor from IO pins. Good Idea? :)
+#define POWER_PIN_HIGH D4
+#define POWER_PIN_LOW D3
 
 unsigned long lastAttemptTime = 0;
 unsigned long lastBlinkTime = 0;
@@ -41,8 +45,8 @@ struct Config
 
 Config config;
 
-// Create an instance of the HTU21D sensor
-HTU21D myHumidity;
+// Create an instance of the sensor
+AHT10 myAHT10;
 
 // Setup the MQTT client class by passing in the WiFi client
 WiFiClient espClient;
@@ -152,12 +156,12 @@ void readConfiguration()
   }
 }
 
-void writeConfiguration()
+bool writeConfiguration()
 {
   if (!config.isValid())
   {
     Serial.println("Invalid configuration. Refusing to write");
-    return;
+    return false;
   }
 
   DynamicJsonDocument doc(1024);
@@ -178,38 +182,120 @@ void writeConfiguration()
   if (!configFile)
   {
     Serial.println("Failed to open config file for writing");
-    return;
+    return false;
   }
 
   Serial.println("Writing valid Config file.....");
   serializeJsonPretty(doc, Serial);
   serializeJson(doc, configFile);
   configFile.close();
+
+  return true;
+}
+
+void processSerialInput(String input)
+{
+  input.trim(); // This will remove leading/trailing whitespace from input
+
+  Serial.println(input);
+
+  if (input.startsWith("{"))
+  {
+    DynamicJsonDocument doc(1024);
+    auto error = deserializeJson(doc, input);
+    if (error)
+    {
+      Serial.println("Failed to parse configuration");
+      return;
+    }
+
+    Serial.println("Processing config data..");
+
+    config.wifi_ssid = doc["wifi_ssid"].as<String>();
+    config.wifi_password = doc["wifi_password"].as<String>();
+    config.mqtt_server = doc["mqtt_server"].as<String>();
+    config.mqtt_port = doc["mqtt_port"].as<int>();
+    config.mqtt_user = doc["mqtt_user"].as<String>();
+    config.mqtt_pass = doc["mqtt_pass"].as<String>();
+    config.mqtt_name = doc["mqtt_name"].as<String>();
+    config.temp_topic = doc["temp_topic"].as<String>();
+    config.hum_topic = doc["hum_topic"].as<String>();
+    config.light_topic = doc["light_topic"].as<String>();
+    config.postInterval = doc["postInterval"].as<int>() * 1000;
+
+    if (writeConfiguration())
+    {
+      ESP.restart();
+    }
+  }
+  else if (input == "RESET")
+  {
+    if (LittleFS.remove(CONFIG_FILE))
+    {
+      Serial.println("Configuration file removed. Please send a new configuration.");
+    }
+    else
+    {
+      Serial.println("Failed to remove configuration file. Please try again.");
+    }
+  }
+  else
+  {
+    Serial.println("Invalid command or JSON configuration. Please try again.");
+  }
 }
 
 void setup_wifi()
 {
-  // If the SSID or password is not set, return immediately
-  if (config.wifi_ssid.isEmpty() || config.wifi_password.isEmpty())
-  {
-    Serial.println("WiFi SSID or password not set. Skipping WiFi connection setup.");
-    return;
-  }
-
-  // We start by connecting to a WiFi network
+  delay(10);
+  // Start the connection attempt
   Serial.println();
   Serial.print("Connecting to ");
-  Serial.println(config.wifi_ssid.c_str());
+  Serial.println(config.wifi_ssid);
 
   WiFi.begin(config.wifi_ssid.c_str(), config.wifi_password.c_str());
 
+  unsigned long startTime = millis();
+
   while (WiFi.status() != WL_CONNECTED)
   {
-    ledBlink(255, 0, 0); // flash RED if not able to connect to wifi
-    delay(500);          // delay to avoid WDT reset
+    delay(500);
+    Serial.print(".");
+
+    // If we've been trying to connect for longer than 10 seconds, break out and allow
+    // execution to continue
+    if (millis() - startTime > 10000)
+    {
+      Serial.println("Failed to connect to WiFi, timed out");
+      break;
+    }
   }
 
-  ledBlue(); // solid BLUE if connected wifi
+  if (WiFi.status() == WL_CONNECTED)
+  {
+    Serial.println("");
+    Serial.println("WiFi connected");
+    Serial.println("IP address: ");
+    Serial.println(WiFi.localIP());
+  } // If not connected to WiFi check for serial comm for 10 seconds
+  else
+  {
+    Serial.println("ERROR: Cannot connect to WiFi, you have 10 seconds to send config or RESET");
+    for (int i = 0; i < 10; i++)
+    {
+      delay(1000);
+      Serial.print(".." + String(i));
+      // check for serial communication
+      if (Serial.available() > 5)
+      {
+        String input = Serial.readStringUntil('\n');
+        processSerialInput(input);
+        Serial.flush();
+      }
+    }
+
+    setup_wifi();
+  }
 }
 
 void sendValues()
@@ -218,8 +304,11 @@ void sendValues()
   delay(200);
   ledGreen(0);
 
-  float hum = myHumidity.readHumidity();
-  float temp = myHumidity.readTemperature();
+  myAHT10.readRawData();
+
+  float temp = myAHT10.readTemperature();
+  float hum = myAHT10.readHumidity();
+
   int ldr = readLDR();
 
   Serial.println(String(hum, 2) + "|" + String(temp, 2) + "|" + String(ldr));
@@ -276,60 +365,18 @@ void connectMqtt()
   }
 }
 
-void processSerialInput(String input)
-{
-  input.trim(); // This will remove leading/trailing whitespace from input
-
-  Serial.println(input);
-
-  if (input.startsWith("{"))
-  {
-    DynamicJsonDocument doc(1024);
-    auto error = deserializeJson(doc, input);
-    if (error)
-    {
-      Serial.println("Failed to parse configuration");
-      return;
-    }
-
-    Serial.println("Processing config data..");
-
-    config.wifi_ssid = doc["wifi_ssid"].as<String>();
-    config.wifi_password = doc["wifi_password"].as<String>();
-    config.mqtt_server = doc["mqtt_server"].as<String>();
-    config.mqtt_port = doc["mqtt_port"].as<int>();
-    config.mqtt_user = doc["mqtt_user"].as<String>();
-    config.mqtt_pass = doc["mqtt_pass"].as<String>();
-    config.mqtt_name = doc["mqtt_name"].as<String>();
-    config.temp_topic = doc["temp_topic"].as<String>();
-    config.hum_topic = doc["hum_topic"].as<String>();
-    config.light_topic = doc["light_topic"].as<String>();
-    config.postInterval = doc["postInterval"].as<int>() * 1000;
-
-    writeConfiguration();
-  }
-  else if (input == "RESET")
-  {
-    if (LittleFS.remove(CONFIG_FILE))
-    {
-      Serial.println("Configuration file removed. Please send a new configuration.");
-    }
-    else
-    {
-      Serial.println("Failed to remove configuration file. Please try again.");
-    }
-  }
-  else
-  {
-    Serial.println("Invalid command or JSON configuration. Please try again.");
-  }
-}
-
 void setup()
 {
+  // Setup the power pins
+  pinMode(POWER_PIN_HIGH, OUTPUT);
+  digitalWrite(POWER_PIN_HIGH, HIGH);
+  pinMode(POWER_PIN_LOW, OUTPUT);
+  digitalWrite(POWER_PIN_LOW, LOW);
+  delay(100);
+
   Serial.begin(115200);
   Wire.begin(SDA, SCL);
-  myHumidity.begin(Wire);
+  myAHT10.begin();
 
   if (!LittleFS.begin())
   {
